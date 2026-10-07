@@ -10,4 +10,4 @@ langgraph_api/
 *.sqlite
 *.sqlite3
 *.db
-./Langchain/customer-support/*.sqlite
+customer-support/*.sqlite
