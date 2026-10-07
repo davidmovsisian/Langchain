@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Travel Agent</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --panel: #fff; --text: #1c1f26; --muted: #6b7280; --border: #e2e5ea;
+    --accent: #2457d6; --accent-text: #fff; --user: #2457d6; --agent: #eef0f4;
+    --ok: #16794c; --warn: #b45309; --bad: #b42318; --bad-bg: #fdecea;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14161a; --panel: #1d2026; --text: #e8eaee; --muted: #9aa1ad; --border: #2f343c;
+      --accent: #5b8cff; --accent-text: #0b1020; --user: #3b66d9; --agent: #272b33;
+      --ok: #4ade80; --warn: #fbbf24; --bad: #f87171; --bad-bg: #3a1f1d;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .app { max-width: 1100px; margin: 0 auto; padding: 16px; height: 100vh; display: flex; flex-direction: column; }
+  header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  header h1 { font-size: 18px; margin: 0; }
+  .layout { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 320px; gap: 16px; }
+  @media (max-width: 800px) { .layout { grid-template-columns: 1fr; } .app { height: auto; } }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+  .chat { display: flex; flex-direction: column; min-height: 0; padding: 0; }
+  .messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; min-height: 300px; }
+  .msg { max-width: 80%; padding: 9px 13px; border-radius: 14px; white-space: pre-wrap; word-wrap: break-word; }
+  .msg.user { align-self: flex-end; background: var(--user); color: #fff; border-bottom-right-radius: 4px; }
+  .msg.agent { align-self: flex-start; background: var(--agent); border-bottom-left-radius: 4px; }
+  .msg.system { align-self: center; color: var(--muted); font-size: 13px; background: none; }
+  .msg.error { align-self: center; background: var(--bad-bg); color: var(--bad); font-size: 13px; }
+  .empty { margin: auto; color: var(--muted); text-align: center; }
+  .composer { display: flex; gap: 8px; padding: 12px; border-top: 1px solid var(--border); }
+  input, button { font: inherit; }
+  input[type=text], input[type=number] {
+    width: 100%; padding: 9px 11px; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--bg); color: var(--text);
+  }
+  button { padding: 9px 16px; border-radius: 8px; border: 1px solid var(--border);
+           background: var(--panel); color: var(--text); cursor: pointer; }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
+  .side { display: flex; flex-direction: column; gap: 16px; overflow-y: auto; }
+  h2 { font-size: 14px; margin: 0 0 8px; }
+  .bar { height: 8px; background: var(--agent); border-radius: 4px; overflow: hidden; margin: 6px 0; }
+  .bar > div { height: 100%; background: var(--ok); transition: width .3s; }
+  .bar.warn > div { background: var(--warn); } .bar.bad > div { background: var(--bad); }
+  .row { display: flex; justify-content: space-between; font-size: 13px; }
+  .muted { color: var(--muted); }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
+  td, th { text-align: right; padding: 3px 0; } td:first-child, th:first-child { text-align: left; }
+  th { color: var(--muted); font-weight: 500; }
+  code { font-size: 12px; background: var(--agent); padding: 1px 5px; border-radius: 4px; }
+  .approval { border: 1px solid var(--warn); border-radius: 10px; padding: 12px; margin: 0 16px 8px; }
+  .approval pre { margin: 6px 0; padding: 8px; background: var(--bg); border-radius: 6px; font-size: 12px;
+                  overflow-x: auto; white-space: pre-wrap; }
+  .approval .actions { display: flex; gap: 8px; margin-top: 8px; }
+  .approval .actions button.on-yes { background: var(--ok); color: #fff; border-color: var(--ok); }
+  .approval .actions button.on-no { background: var(--bad); color: #fff; border-color: var(--bad); }
+  .approvals-wrap { border-top: 1px solid var(--border); padding-top: 12px; }
+  .approvals-wrap .submit { margin: 4px 16px 12px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+
+<script type="text/babel" data-presets="react">
+const { useState, useRef, useEffect } = React;
+
+// "" = same origin (the UI is served by the FastAPI app). Change if the API runs elsewhere
+// (then enable CORS on the server).
+const API_BASE = "";
+
+const usd = (n) => "$" + Number(n).toFixed(6);
+
+// ---------------------------------------------------------------- API helper
+function describeError(data, status) {
+  const d = data && data.detail;
+  if (!d) return `Request failed (${status}).`;
+  if (typeof d === "string") return d;
+  if (Array.isArray(d)) return d.map((x) => x.msg).join("; ");   // validation errors
+  return d.message || d.error || JSON.stringify(d);
+}
+
+async function api(path, options = {}) {
+  const res = await fetch(API_BASE + path, {
+    headers: { "Content-Type": "application/json" },
+    ...options,
+  });
+  let data = null;
+  try { data = await res.json(); } catch (_) { /* empty body */ }
+  if (!res.ok) {
+    const err = new Error(describeError(data, res.status));
+    err.status = res.status;
+    err.detail = data && data.detail;
+    throw err;
+  }
+  return data;
+}
+
+// ---------------------------------------------------------------- Setup form
+function SetupForm({ onCreate, busy }) {
+  const [total, setTotal] = useState("0.10");
+  const [overflow, setOverflow] = useState("0.10");
+  const [passenger, setPassenger] = useState("3442 587242");
+
+  return (
+    <div className="panel">
+      <h2>Start a session</h2>
+      <label>Total budget (USD)</label>
+      <input type="number" step="0.01" min="0.001" value={total} onChange={(e) => setTotal(e.target.value)} />
+      <label>Overflow fraction (0 = strict)</label>
+      <input type="number" step="0.05" min="0" max="0.99" value={overflow} onChange={(e) => setOverflow(e.target.value)} />
+      <label>Passenger ID</label>
+      <input type="text" value={passenger} onChange={(e) => setPassenger(e.target.value)} />
+      <div style={{ marginTop: 14 }}>
+        <button className="primary" disabled={busy} onClick={() =>
+          onCreate({
+            total_budget: parseFloat(total),
+            overflow_fraction: parseFloat(overflow),
+            passenger_id: passenger.trim(),
+          })}>
+          Set budget &amp; start
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- Budget panel
+function BudgetPanel({ budget, sessionId, onNew }) {
+  const pct = Math.min(100, (budget.spent / budget.total_budget) * 100);
+  const level = pct >= 100 ? "bad" : pct >= 80 ? "warn" : "";
+  return (
+    <div className="panel">
+      <h2>Budget</h2>
+      <div className="row"><span>Spent</span><b>{usd(budget.spent)}</b></div>
+      <div className={"bar " + level}><div style={{ width: pct + "%" }} /></div>
+      <div className="row muted"><span>Remaining</span><span>{usd(budget.remaining)}</span></div>
+      <div className="row muted"><span>Total</span><span>{usd(budget.total_budget)}</span></div>
+      <div className="row muted"><span>Hard ceiling</span><span>{usd(budget.effective_ceiling)}</span></div>
+      <table>
+        <thead><tr><th>Agent</th><th>Spent</th><th>Left</th><th>Calls</th></tr></thead>
+        <tbody>
+          {Object.entries(budget.nodes).map(([name, n]) => (
+            <tr key={name}>
+              <td>{name.replace("_agent", "")}</td>
+              <td>{n.spent.toFixed(4)}</td><td>{n.remaining.toFixed(4)}</td><td>{n.calls}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div className="muted" style={{ fontSize: 12, marginTop: 10 }}>
+        Session <code>{sessionId.slice(0, 8)}</code>
+      </div>
+      <div style={{ marginTop: 10 }}><button onClick={onNew}>New session</button></div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- Approvals
+function ApprovalCard({ item, decision, onChange }) {
+  const yes = decision && decision.approved === true;
+  const no = decision && decision.approved === false;
+  return (
+    <div className="approval">
+      <b>Approval needed:</b> <code>{item.action}</code>
+      <pre>{JSON.stringify(item.args, null, 2)}</pre>
+      <div className="actions">
+        <button className={yes ? "on-yes" : ""} onClick={() => onChange({ approved: true })}>Approve</button>
+        <button className={no ? "on-no" : ""} onClick={() => onChange({ approved: false, reason: (decision && decision.reason) || "" })}>Reject</button>
+      </div>
+      {no && (
+        <div style={{ marginTop: 8 }}>
+          <input type="text" placeholder="What should change? (optional)" value={decision.reason || ""}
+                 onChange={(e) => onChange({ approved: false, reason: e.target.value })} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- Chat
+function Chat({ session, budget, setBudget }) {
+  const [messages, setMessages] = useState([]);
+  const [pending, setPending] = useState([]);
+  const [decisions, setDecisions] = useState({});
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const bottomRef = useRef(null);
+
+  useEffect(() => { bottomRef.current && bottomRef.current.scrollIntoView({ behavior: "smooth" }); },
+            [messages, pending, busy]);
+
+  const push = (role, text) => setMessages((m) => [...m, { role, text }]);
+
+  function applyResponse(r) {
+    setBudget(r.budget);
+    if (r.reply) push("agent", r.reply);
+    setPending(r.pending_approvals || []);
+    setDecisions({});
+  }
+
+  function handleError(e) {
+    push("error", e.message);
+    const d = e.detail;
+    if (d && typeof d === "object" && !Array.isArray(d)) {
+      if (d.budget) setBudget(d.budget);                       // 402: budget exhausted
+      if (d.pending_approvals) { setPending(d.pending_approvals); setDecisions({}); }   // 409
+    }
+  }
+
+  async function call(body) {
+    setBusy(true);
+    try {
+      applyResponse(await api(`/chat/${session}`, { method: "POST", body: JSON.stringify(body) }));
+    } catch (e) {
+      handleError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function send() {
+    const text = input.trim();
+    if (!text || busy || pending.length) return;
+    setInput("");
+    push("user", text);
+    call({ message: text });
+  }
+
+  const allDecided = pending.length > 0 && pending.every((p) => decisions[p.id]);
+
+  function submitDecisions() {
+    const approvals = {};
+    pending.forEach((p) => { approvals[p.id] = decisions[p.id]; });
+    const summary = pending.map((p) => `${decisions[p.id].approved ? "Approved" : "Rejected"} ${p.action}`).join(", ");
+    push("system", summary);
+    call({ approvals });
+  }
+
+  const exhausted = budget.remaining <= 0;
+
+  return (
+    <div className="panel chat">
+      <div className="messages">
+        {messages.length === 0 && (
+          <div className="empty">Ask about your flight, hotels, car rentals or excursions.<br />
+            <span style={{ fontSize: 13 }}>e.g. “Hi there, what time is my flight?”</span></div>
+        )}
+        {messages.map((m, i) => <div key={i} className={"msg " + m.role}>{m.text}</div>)}
+        {busy && <div className="msg system">Working…</div>}
+        <div ref={bottomRef} />
+      </div>
+
+      {pending.length > 0 && (
+        <div className="approvals-wrap">
+          {pending.map((p) => (
+            <ApprovalCard key={p.id} item={p} decision={decisions[p.id]}
+                          onChange={(d) => setDecisions((cur) => ({ ...cur, [p.id]: d }))} />
+          ))}
+          <div className="submit">
+            <button className="primary" disabled={!allDecided || busy} onClick={submitDecisions}>
+              Send decision{pending.length > 1 ? "s" : ""}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="composer">
+        <input type="text" value={input} disabled={busy || pending.length > 0 || exhausted}
+               placeholder={pending.length ? "Resolve the approval first…" : exhausted ? "Budget used up" : "Type a message…"}
+               onChange={(e) => setInput(e.target.value)}
+               onKeyDown={(e) => e.key === "Enter" && send()} />
+        <button className="primary" onClick={send} disabled={busy || pending.length > 0 || exhausted || !input.trim()}>Send</button>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- App
+function App() {
+  const [session, setSession] = useState(null);
+  const [budget, setBudget] = useState(null);
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  async function create(settings) {
+    setBusy(true); setError(null);
+    try {
+      const r = await api("/budget", { method: "POST", body: JSON.stringify(settings) });
+      setSession(r.session_id); setBudget(r.budget);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function newSession() {
+    if (session) { try { await api(`/sessions/${session}`, { method: "DELETE" }); } catch (_) { /* already gone */ } }
+    setSession(null); setBudget(null);
+  }
+
+  return (
+    <div className="app">
+      <header><h1>✈️ Swiss Airlines assistant</h1></header>
+      {!session ? (
+        <div style={{ maxWidth: 380 }}>
+          <SetupForm onCreate={create} busy={busy} />
+          {error && <p style={{ color: "var(--bad)" }}>{error}</p>}
+        </div>
+      ) : (
+        <div className="layout">
+          <Chat key={session} session={session} budget={budget} setBudget={setBudget} />
+          <div className="side"><BudgetPanel budget={budget} sessionId={session} onNew={newSession} /></div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

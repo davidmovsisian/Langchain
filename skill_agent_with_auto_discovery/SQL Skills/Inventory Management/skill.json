@@ -1,0 +1,5 @@
+{
+    "name": "inventory_management",
+    "description": "Database schema and business logic for inventory tracking including products, warehouses, and stock levels.",
+    "content_file": "SKILL.md"
+}
